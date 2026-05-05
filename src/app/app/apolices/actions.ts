@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { put } from "@vercel/blob";
-import { PDFParse } from "pdf-parse";
 import { z } from "zod";
 
 import { requireSession } from "@/lib/auth";
@@ -145,7 +144,13 @@ function isLowQualityPdfText(rawText: string) {
 }
 
 async function extractTextFromPdfBuffer(buffer: Buffer) {
-  const parser = new PDFParse({ data: buffer });
+  const mod = (await import("pdf-parse")) as unknown as {
+    PDFParse: new (opts: { data: Buffer }) => {
+      getText: () => Promise<{ text?: string }>;
+      destroy: () => Promise<void>;
+    };
+  };
+  const parser = new mod.PDFParse({ data: buffer });
   try {
     const parsed = await parser.getText();
     return parsed.text || "";
