@@ -128,6 +128,305 @@ function parseMoneyToString(value: string) {
   return num.toFixed(2);
 }
 
+function isLowQualityPdfText(rawText: string) {
+  const trimmed = rawText.trim();
+  if (!trimmed) return true;
+  const withoutWhitespace = trimmed.replace(/\s+/g, "");
+  if (withoutWhitespace.length < 350) return true;
+
+  const withoutPageMarkers = trimmed
+    .replace(/--\s*\d+\s*of\s*\d+\s*--/gi, " ")
+    .replace(/^\s*\d+\s*\/\s*\d+\s*$/gm, " ")
+    .trim();
+  const alphaNumCount = (withoutPageMarkers.match(/[A-Za-zÀ-ÿ0-9]/g) ?? []).length;
+  if (alphaNumCount < 200) return true;
+
+  return false;
+}
+
+async function extractTextFromPdfBuffer(buffer: Buffer) {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const parsed = await parser.getText();
+    return parsed.text || "";
+  } finally {
+    await parser.destroy();
+  }
+}
+
+type AdobeTokenResponse = {
+  access_token: string;
+  token_type?: string;
+  expires_in?: number;
+};
+
+type AdobeUploadResponse = {
+  assetID: string;
+  uploadUri: string;
+};
+
+type AdobeDownloadResponse = {
+  downloadUri: string;
+  size?: number;
+  type?: string;
+};
+
+type AdobeJobStatusResponse = {
+  status?: string;
+  asset?: { assetID?: string; downloadUri?: string };
+  assetID?: string;
+  downloadUri?: string;
+  dowloadUri?: string;
+  result?: unknown;
+  error?: { code?: string; message?: string };
+};
+
+function getPdfServicesBaseUrls() {
+  const envBase = process.env.PDF_SERVICES_BASE_URL?.trim();
+  const urls = [
+    envBase || null,
+    "https://pdf-services-ue1.adobe.io",
+    "https://pdf-services-ew1.adobe.io",
+    "https://pdf-services.adobe.io",
+  ].filter(Boolean) as string[];
+
+  return Array.from(new Set(urls));
+}
+
+function resolveAdobeLocation(baseUrl: string, location: string) {
+  const trimmed = location.trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/")) return `${baseUrl}${trimmed}`;
+  return `${baseUrl}/${trimmed}`;
+}
+
+async function adobeFetchJson<T>(
+  url: string,
+  init: RequestInit,
+): Promise<{ ok: true; status: number; headers: Headers; json: T } | { ok: false; status: number; text: string }> {
+  const res = await fetch(url, init);
+  const status = res.status;
+  const headers = res.headers;
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return { ok: false, status, text };
+  }
+  if (!contentType.includes("application/json")) {
+    const text = await res.text().catch(() => "");
+    return { ok: false, status, text };
+  }
+  const json = (await res.json()) as T;
+  return { ok: true, status, headers, json };
+}
+
+async function getAdobeAccessToken(baseUrl: string, clientId: string, clientSecret: string) {
+  const body = new URLSearchParams();
+  body.set("client_id", clientId);
+  body.set("client_secret", clientSecret);
+
+  const res = await adobeFetchJson<AdobeTokenResponse>(`${baseUrl}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    cache: "no-store",
+  });
+
+  if (!res.ok) throw new Error("token_failed");
+  if (!res.json.access_token) throw new Error("token_missing");
+  return res.json.access_token;
+}
+
+async function uploadAdobeAsset(
+  baseUrl: string,
+  token: string,
+  clientId: string,
+): Promise<AdobeUploadResponse> {
+  const res = await adobeFetchJson<AdobeUploadResponse>(`${baseUrl}/assets`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      "x-api-key": clientId,
+    },
+    body: JSON.stringify({ mediaType: "application/pdf" }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) throw new Error("assets_failed");
+  if (!res.json.assetID || !res.json.uploadUri) throw new Error("assets_invalid");
+  return res.json;
+}
+
+async function putToUploadUri(uploadUri: string, pdfBuffer: Buffer) {
+  const res = await fetch(uploadUri, {
+    method: "PUT",
+    headers: { "Content-Type": "application/pdf" },
+    body: new Uint8Array(pdfBuffer),
+  });
+  if (!res.ok) throw new Error("upload_failed");
+}
+
+async function submitAdobeOcrJob(
+  baseUrl: string,
+  token: string,
+  clientId: string,
+  assetID: string,
+) {
+  const res = await fetch(`${baseUrl}/operation/ocr`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      "x-api-key": clientId,
+    },
+    body: JSON.stringify({ assetID }),
+    cache: "no-store",
+  });
+  if (res.status !== 201) throw new Error("ocr_submit_failed");
+  const location = res.headers.get("location");
+  if (!location) throw new Error("ocr_location_missing");
+  return resolveAdobeLocation(baseUrl, location);
+}
+
+function extractAdobeJobResult(
+  json: AdobeJobStatusResponse,
+): { status: string; downloadUri?: string; assetId?: string; errorMessage?: string } {
+  const status = String(json.status ?? "").toLowerCase();
+  const downloadUri =
+    json.downloadUri ??
+    json.dowloadUri ??
+    json.asset?.downloadUri ??
+    ((json.result as any)?.downloadUri as string | undefined) ??
+    ((json.result as any)?.asset?.downloadUri as string | undefined);
+
+  const assetId =
+    json.asset?.assetID ??
+    json.assetID ??
+    ((json.result as any)?.asset?.assetID as string | undefined) ??
+    ((json.result as any)?.assetID as string | undefined);
+
+  const errorMessage =
+    json.error?.message ??
+    ((json.result as any)?.error?.message as string | undefined) ??
+    ((json as any)?.message as string | undefined);
+
+  return { status, downloadUri, assetId, errorMessage };
+}
+
+async function pollAdobeJobForResult(
+  pollingUrl: string,
+  token: string,
+  clientId: string,
+) {
+  const maxAttempts = 18;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await adobeFetchJson<AdobeJobStatusResponse>(pollingUrl, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-api-key": clientId,
+      },
+      cache: "no-store",
+    });
+
+    if (res.ok) {
+      const { status, downloadUri, assetId, errorMessage } = extractAdobeJobResult(res.json);
+      if (status.includes("done")) {
+        if (downloadUri) return { downloadUri };
+        if (assetId) return { assetId };
+        throw new Error("ocr_done_missing_result");
+      }
+      if (status.includes("failed") || status.includes("error")) {
+        if (errorMessage) throw new Error(`ocr_failed:${errorMessage}`);
+        throw new Error("ocr_failed");
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error("ocr_timeout");
+}
+
+async function getAdobeDownloadUri(
+  baseUrl: string,
+  token: string,
+  clientId: string,
+  assetId: string,
+) {
+  const encoded = encodeURIComponent(assetId);
+  const res = await adobeFetchJson<AdobeDownloadResponse>(`${baseUrl}/assets/${encoded}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-api-key": clientId,
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("download_uri_failed");
+  if (!res.json.downloadUri) throw new Error("download_uri_missing");
+  return res.json.downloadUri;
+}
+
+async function adobeOcrAndExtractText(pdfBuffer: Buffer) {
+  const clientId =
+    process.env.PDF_SERVICES_CLIENT_ID?.trim() ||
+    process.env.ADOBE_PDF_SERVICES_CLIENT_ID?.trim() ||
+    process.env.ADOBE_CLIENT_ID?.trim() ||
+    "";
+  const clientSecret =
+    process.env.PDF_SERVICES_CLIENT_SECRET?.trim() ||
+    process.env.ADOBE_PDF_SERVICES_CLIENT_SECRET?.trim() ||
+    process.env.ADOBE_CLIENT_SECRET?.trim() ||
+    "";
+  if (!clientId || !clientSecret) throw new Error("missing_adobe_credentials");
+
+  const baseUrls = getPdfServicesBaseUrls();
+  let lastError: unknown = null;
+
+  for (const baseUrl of baseUrls) {
+    try {
+      const token = await getAdobeAccessToken(baseUrl, clientId, clientSecret);
+      const { assetID, uploadUri } = await uploadAdobeAsset(baseUrl, token, clientId);
+      await putToUploadUri(uploadUri, pdfBuffer);
+      const pollingUrl = await submitAdobeOcrJob(baseUrl, token, clientId, assetID);
+      const jobResult = await pollAdobeJobForResult(pollingUrl, token, clientId);
+      const downloadUri =
+        jobResult.downloadUri ??
+        (jobResult.assetId
+          ? await getAdobeDownloadUri(baseUrl, token, clientId, jobResult.assetId)
+          : null);
+      if (!downloadUri) throw new Error("download_uri_missing");
+      const res = await fetch(downloadUri, { cache: "no-store" });
+      if (!res.ok) throw new Error("download_failed");
+      const ocrBuffer = Buffer.from(await res.arrayBuffer());
+      return await extractTextFromPdfBuffer(ocrBuffer);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw lastError ?? new Error("adobe_ocr_failed");
+}
+
+function getOcrFriendlyErrorMessage(err: unknown) {
+  const msg = err instanceof Error ? err.message : "";
+  if (msg === "missing_adobe_credentials") {
+    return "OCR não configurado. Configure PDF_SERVICES_CLIENT_ID e PDF_SERVICES_CLIENT_SECRET no Vercel.";
+  }
+  if (msg.includes("token_failed") || msg.includes("assets_failed") || msg.includes("ocr_submit_failed")) {
+    return "O OCR (Adobe PDF Services) falhou ao iniciar. Verifique as credenciais e a região (UE1/EW1).";
+  }
+  if (msg.startsWith("ocr_failed:")) {
+    return `O OCR (Adobe PDF Services) falhou: ${msg.slice("ocr_failed:".length).trim() || "erro desconhecido"}.`;
+  }
+  if (msg === "ocr_timeout") {
+    return "O OCR demorou demais para concluir. Tente novamente em alguns instantes.";
+  }
+  return "O OCR (Adobe PDF Services) não está disponível (ou falhou).";
+}
+
 export async function parsePolicyPdfAction(
   _: ParsePolicyPdfState,
   formData: FormData,
@@ -147,13 +446,17 @@ export async function parsePolicyPdfAction(
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const parser = new PDFParse({ data: buffer });
-    let rawText = "";
-    try {
-      const parsed = await parser.getText();
-      rawText = parsed.text || "";
-    } finally {
-      await parser.destroy();
+    let rawText = await extractTextFromPdfBuffer(buffer);
+    if (isLowQualityPdfText(rawText)) {
+      try {
+        rawText = await adobeOcrAndExtractText(buffer);
+      } catch (e) {
+        if (!rawText.trim()) {
+          return {
+            error: `Não consegui ler texto desse PDF. Ele parece escaneado. ${getOcrFriendlyErrorMessage(e)}`,
+          };
+        }
+      }
     }
 
     const text = normalizeSpaces(rawText);
