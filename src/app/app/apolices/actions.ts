@@ -9,13 +9,13 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const updatePolicySchema = z.object({
-  clientId: z.string().uuid(),
-  insurer: z.string().min(2),
-  policyType: z.string().min(2),
-  startDate: z.string().min(4),
-  endDate: z.string().min(4),
+  clientId: z.string().uuid().or(z.literal("")),
+  insurer: z.string().optional().or(z.literal("")),
+  policyType: z.string().optional().or(z.literal("")),
+  startDate: z.string().optional().or(z.literal("")),
+  endDate: z.string().optional().or(z.literal("")),
   premium: z.string().optional().or(z.literal("")),
-  status: z.string().min(2),
+  status: z.string().optional().or(z.literal("")),
 });
 
 function toDate(value: string) {
@@ -40,14 +40,22 @@ const createPolicySchema = z.union([
   }),
   updatePolicySchema.omit({ clientId: true }).extend({
     clientMode: z.literal("new"),
-    clientName: z.string().min(2),
-    clientCpfCnpj: z.string().min(5),
+    clientName: z.string().optional().or(z.literal("")),
+    clientCpfCnpj: z.string().optional().or(z.literal("")),
     clientEmail: z.string().email().optional().or(z.literal("")),
     clientPhone: z.string().optional().or(z.literal("")),
     clientBirthDate: z.string().optional().or(z.literal("")),
     clientNotes: z.string().optional().or(z.literal("")),
   }),
 ]);
+
+function generateCpfCnpj() {
+  const uuid =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `SEMCPF-${uuid}`;
+}
 
 function generatePolicyNo() {
   const uuid =
@@ -71,17 +79,17 @@ export async function createPolicyAction(
 
   const parsed = createPolicySchema.safeParse({
     clientMode: formData.get("clientMode") ?? "existing",
-    clientId: formData.get("clientId"),
-    clientName: formData.get("clientName"),
-    clientCpfCnpj: formData.get("clientCpfCnpj"),
+    clientId: formData.get("clientId") ?? "",
+    clientName: formData.get("clientName") ?? "",
+    clientCpfCnpj: formData.get("clientCpfCnpj") ?? "",
     clientEmail: formData.get("clientEmail") ?? "",
     clientPhone: formData.get("clientPhone") ?? "",
     clientBirthDate: formData.get("clientBirthDate") ?? "",
     clientNotes: formData.get("clientNotes") ?? "",
-    insurer: formData.get("insurer"),
-    policyType: formData.get("policyType"),
-    startDate: formData.get("startDate"),
-    endDate: formData.get("endDate"),
+    insurer: formData.get("insurer") ?? "",
+    policyType: formData.get("policyType") ?? "",
+    startDate: formData.get("startDate") ?? "",
+    endDate: formData.get("endDate") ?? "",
     premium: formData.get("premium") ?? "",
     status: formData.get("status") ?? "ATIVA",
   });
@@ -89,53 +97,84 @@ export async function createPolicyAction(
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
 
   try {
+    const inlineClientCpfCnpj =
+      parsed.data.clientMode === "new" && parsed.data.clientCpfCnpj?.trim()
+        ? parsed.data.clientCpfCnpj.trim()
+        : parsed.data.clientMode === "new"
+          ? generateCpfCnpj()
+          : null;
+    const inlineClientName =
+      parsed.data.clientMode === "new" && parsed.data.clientName?.trim()
+        ? parsed.data.clientName.trim()
+        : parsed.data.clientMode === "new"
+          ? "Sem nome"
+          : null;
+
     const clientId =
-      parsed.data.clientMode === "existing"
+      parsed.data.clientMode === "existing" && parsed.data.clientId
         ? parsed.data.clientId
-        : (
-            await prisma.client.upsert({
-              where: { cpfCnpj: parsed.data.clientCpfCnpj.trim() },
-              select: { id: true },
-              create: {
-                name: parsed.data.clientName.trim(),
-                cpfCnpj: parsed.data.clientCpfCnpj.trim(),
-                email: parsed.data.clientEmail?.trim()
-                  ? parsed.data.clientEmail.trim()
-                  : null,
-                phone: parsed.data.clientPhone?.trim()
-                  ? parsed.data.clientPhone.trim()
-                  : null,
-                birthDate: toOptionalDate(parsed.data.clientBirthDate ?? "") ?? null,
-                notes: parsed.data.clientNotes?.trim()
-                  ? parsed.data.clientNotes.trim()
-                  : null,
-              },
-              update: {
-                name: parsed.data.clientName.trim(),
-                email: parsed.data.clientEmail?.trim()
-                  ? parsed.data.clientEmail.trim()
-                  : null,
-                phone: parsed.data.clientPhone?.trim()
-                  ? parsed.data.clientPhone.trim()
-                  : null,
-                birthDate: toOptionalDate(parsed.data.clientBirthDate ?? "") ?? null,
-                notes: parsed.data.clientNotes?.trim()
-                  ? parsed.data.clientNotes.trim()
-                  : null,
-              },
-            })
-          ).id;
+        : parsed.data.clientMode === "new"
+          ? (
+              await prisma.client.upsert({
+                where: {
+                  cpfCnpj: inlineClientCpfCnpj ?? generateCpfCnpj(),
+                },
+                select: { id: true },
+                create: {
+                  name: inlineClientName ?? "Sem nome",
+                  cpfCnpj: inlineClientCpfCnpj ?? generateCpfCnpj(),
+                  email: parsed.data.clientEmail?.trim()
+                    ? parsed.data.clientEmail.trim()
+                    : null,
+                  phone: parsed.data.clientPhone?.trim()
+                    ? parsed.data.clientPhone.trim()
+                    : null,
+                  birthDate: toOptionalDate(parsed.data.clientBirthDate ?? "") ?? null,
+                  notes: parsed.data.clientNotes?.trim()
+                    ? parsed.data.clientNotes.trim()
+                    : null,
+                },
+                update: {
+                  name: inlineClientName ?? "Sem nome",
+                  email: parsed.data.clientEmail?.trim()
+                    ? parsed.data.clientEmail.trim()
+                    : null,
+                  phone: parsed.data.clientPhone?.trim()
+                    ? parsed.data.clientPhone.trim()
+                    : null,
+                  birthDate: toOptionalDate(parsed.data.clientBirthDate ?? "") ?? null,
+                  notes: parsed.data.clientNotes?.trim()
+                    ? parsed.data.clientNotes.trim()
+                    : null,
+                },
+              })
+            ).id
+          : (
+              await prisma.client.create({
+                select: { id: true },
+                data: { name: "Sem nome", cpfCnpj: generateCpfCnpj() },
+              })
+            ).id;
+
+    const startDate = toOptionalDate(parsed.data.startDate ?? "") ?? new Date();
+    const endDate =
+      toOptionalDate(parsed.data.endDate ?? "") ??
+      (() => {
+        const d = new Date(startDate);
+        d.setFullYear(d.getFullYear() + 1);
+        return d;
+      })();
 
     const created = await prisma.policy.create({
       data: {
         clientId,
-        insurer: parsed.data.insurer.trim(),
-        policyType: parsed.data.policyType.trim(),
+        insurer: parsed.data.insurer?.trim() ? parsed.data.insurer.trim() : "SEM SEGURADORA",
+        policyType: parsed.data.policyType?.trim() ? parsed.data.policyType.trim() : "SEM TIPO",
         policyNo: generatePolicyNo(),
-        startDate: toDate(parsed.data.startDate),
-        endDate: toDate(parsed.data.endDate),
+        startDate,
+        endDate,
         premium: parsed.data.premium?.trim() ? parsed.data.premium.trim() : null,
-        status: parsed.data.status.trim(),
+        status: parsed.data.status?.trim() ? parsed.data.status.trim() : "ATIVA",
       },
     });
 
@@ -174,11 +213,11 @@ export async function updatePolicyAction(
 ): Promise<ActionState> {
   await requireSession();
   const parsed = updatePolicySchema.safeParse({
-    clientId: formData.get("clientId"),
-    insurer: formData.get("insurer"),
-    policyType: formData.get("policyType"),
-    startDate: formData.get("startDate"),
-    endDate: formData.get("endDate"),
+    clientId: formData.get("clientId") ?? "",
+    insurer: formData.get("insurer") ?? "",
+    policyType: formData.get("policyType") ?? "",
+    startDate: formData.get("startDate") ?? "",
+    endDate: formData.get("endDate") ?? "",
     premium: formData.get("premium") ?? "",
     status: formData.get("status") ?? "ATIVA",
   });
@@ -186,16 +225,38 @@ export async function updatePolicyAction(
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
 
   try {
+    const existing = await prisma.policy.findUnique({
+      where: { id: policyId },
+      select: {
+        clientId: true,
+        insurer: true,
+        policyType: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+      },
+    });
+    if (!existing) return { error: "Apólice não encontrada." };
+
+    const clientId = parsed.data.clientId ? parsed.data.clientId : existing.clientId;
+    const insurer = parsed.data.insurer?.trim() ? parsed.data.insurer.trim() : existing.insurer;
+    const policyType = parsed.data.policyType?.trim()
+      ? parsed.data.policyType.trim()
+      : existing.policyType;
+    const startDate = toOptionalDate(parsed.data.startDate ?? "") ?? existing.startDate;
+    const endDate = toOptionalDate(parsed.data.endDate ?? "") ?? existing.endDate;
+    const status = parsed.data.status?.trim() ? parsed.data.status.trim() : existing.status;
+
     await prisma.policy.update({
       where: { id: policyId },
       data: {
-        clientId: parsed.data.clientId,
-        insurer: parsed.data.insurer.trim(),
-        policyType: parsed.data.policyType.trim(),
-        startDate: toDate(parsed.data.startDate),
-        endDate: toDate(parsed.data.endDate),
+        clientId,
+        insurer,
+        policyType,
+        startDate,
+        endDate,
         premium: parsed.data.premium?.trim() ? parsed.data.premium.trim() : null,
-        status: parsed.data.status.trim(),
+        status,
       },
     });
     revalidatePath("/app/apolices");

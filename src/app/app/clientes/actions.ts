@@ -9,13 +9,21 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const clientSchema = z.object({
-  name: z.string().min(2),
-  cpfCnpj: z.string().min(5),
+  name: z.string().optional().or(z.literal("")),
+  cpfCnpj: z.string().optional().or(z.literal("")),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional().or(z.literal("")),
   birthDate: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
 });
+
+function generateCpfCnpj() {
+  const uuid =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `SEMCPF-${uuid}`;
+}
 
 function toDate(value?: string) {
   if (!value) return null;
@@ -40,14 +48,6 @@ export type ImportClientsState =
       rowErrors?: Array<{ row: number; message: string }>;
     }
   | null;
-
-function generatePolicyNo() {
-  const uuid =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `AUTO-${uuid}`;
-}
 
 function normalizeHeader(value: unknown) {
   const s = String(value ?? "")
@@ -181,6 +181,7 @@ export async function importClientsAction(
     "numero da apolice",
     "nº apolice",
     "policy no",
+    "placa",
   ];
   const startDateKeys = ["inicio", "vigencia", "vigencia inicio", "data inicio", "inicio vigencia"];
   const endDateKeys = [
@@ -193,20 +194,6 @@ export async function importClientsAction(
   ];
   const premiumKeys = ["premio", "valor", "valor premio", "premio total", "premium"];
   const statusKeys = ["status", "situacao"];
-
-  const hasAny = (keys: string[]) => keys.some((k) => k in headerIndex);
-  if (includePolicies) {
-    const ok =
-      hasAny(insurerKeys) &&
-      hasAny(policyTypeKeys) &&
-      hasAny(startDateKeys);
-    if (!ok) {
-      return {
-        error:
-          "Para importar apólices, inclua as colunas: Seguradora, Tipo e Início (ou Vigência).",
-      };
-    }
-  }
 
   const dataRows = rows.slice(1);
   const rowErrors: Array<{ row: number; message: string }> = [];
@@ -232,16 +219,11 @@ export async function importClientsAction(
 
     const clientName = toText(rawName);
     const cpfCnpj = toText(rawCpf);
-    if (!clientName || !cpfCnpj) {
-      skipped += 1;
-      if (rowErrors.length < 20) {
-        rowErrors.push({
-          row: rowNumber,
-          message: "Nome e CPF/CNPJ são obrigatórios.",
-        });
-      }
-      continue;
-    }
+    const hasAnyValue = row.some((v) => String(v ?? "").trim() !== "");
+    if (!hasAnyValue) continue;
+
+    const clientNameValue = clientName?.trim() ? clientName.trim() : "Sem nome";
+    const cpfCnpjValue = cpfCnpj?.trim() ? cpfCnpj.trim() : generateCpfCnpj();
 
     const email = toText(rawEmail);
     const phone = toText(rawPhone);
@@ -250,23 +232,23 @@ export async function importClientsAction(
 
     try {
       const existing = await prisma.client.findUnique({
-        where: { cpfCnpj: cpfCnpj.trim() },
+        where: { cpfCnpj: cpfCnpjValue },
         select: { id: true },
       });
 
       const savedClient = await prisma.client.upsert({
-        where: { cpfCnpj: cpfCnpj.trim() },
+        where: { cpfCnpj: cpfCnpjValue },
         select: { id: true },
         create: {
-          name: clientName.trim(),
-          cpfCnpj: cpfCnpj.trim(),
+          name: clientNameValue,
+          cpfCnpj: cpfCnpjValue,
           email: email ? email.trim() : null,
           phone: phone ? phone.trim() : null,
           birthDate,
           notes: notes ? notes.trim() : null,
         },
         update: {
-          name: clientName.trim(),
+          name: clientNameValue,
           email: email ? email.trim() : null,
           phone: phone ? phone.trim() : null,
           birthDate,
@@ -282,8 +264,7 @@ export async function importClientsAction(
 
         const insurer = toText(pickCell(row, headerIndex, insurerKeys));
         const policyType = toText(pickCell(row, headerIndex, policyTypeKeys));
-        const policyNo =
-          toText(pickCell(row, headerIndex, policyNoKeys)) ?? generatePolicyNo();
+        const policyNo = toText(pickCell(row, headerIndex, policyNoKeys));
         const startDate = parseAnyDate(pickCell(row, headerIndex, startDateKeys));
         const endDateFromSheet = parseAnyDate(pickCell(row, headerIndex, endDateKeys));
         const endDate =
@@ -298,13 +279,13 @@ export async function importClientsAction(
         const premium = parsePremium(pickCell(row, headerIndex, premiumKeys));
         const status = toText(pickCell(row, headerIndex, statusKeys)) ?? "ATIVA";
 
-        if (!insurer || !policyType || !startDate || !endDate) {
+        if (!insurer || !policyType || !policyNo || !startDate || !endDate) {
           policiesSkipped += 1;
           if (rowErrors.length < 20) {
             rowErrors.push({
               row: rowNumber,
               message:
-                "Dados de apólice incompletos (Seguradora, Tipo e Início/Vigência).",
+                "Dados de apólice incompletos (Seguradora, Tipo, Número e Início/Vigência).",
             });
           }
         } else {
@@ -390,8 +371,8 @@ export async function createClientAction(
   await requireSession();
 
   const parsed = clientSchema.safeParse({
-    name: formData.get("name"),
-    cpfCnpj: formData.get("cpfCnpj"),
+    name: formData.get("name") ?? "",
+    cpfCnpj: formData.get("cpfCnpj") ?? "",
     email: formData.get("email") ?? "",
     phone: formData.get("phone") ?? "",
     birthDate: formData.get("birthDate") ?? "",
@@ -401,10 +382,14 @@ export async function createClientAction(
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
 
   try {
+    const name = parsed.data.name?.trim() ? parsed.data.name.trim() : "Sem nome";
+    const cpfCnpj = parsed.data.cpfCnpj?.trim()
+      ? parsed.data.cpfCnpj.trim()
+      : generateCpfCnpj();
     const created = await prisma.client.create({
       data: {
-        name: parsed.data.name.trim(),
-        cpfCnpj: parsed.data.cpfCnpj.trim(),
+        name,
+        cpfCnpj,
         email: parsed.data.email ? parsed.data.email.trim() : null,
         phone: parsed.data.phone ? parsed.data.phone.trim() : null,
         birthDate: toDate(parsed.data.birthDate) ?? null,
@@ -427,8 +412,8 @@ export async function updateClientAction(
   await requireSession();
 
   const parsed = clientSchema.safeParse({
-    name: formData.get("name"),
-    cpfCnpj: formData.get("cpfCnpj"),
+    name: formData.get("name") ?? "",
+    cpfCnpj: formData.get("cpfCnpj") ?? "",
     email: formData.get("email") ?? "",
     phone: formData.get("phone") ?? "",
     birthDate: formData.get("birthDate") ?? "",
@@ -438,11 +423,22 @@ export async function updateClientAction(
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
 
   try {
+    const existing = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { name: true, cpfCnpj: true },
+    });
+    if (!existing) return { error: "Cliente não encontrado." };
+
+    const name = parsed.data.name?.trim() ? parsed.data.name.trim() : existing.name;
+    const cpfCnpj = parsed.data.cpfCnpj?.trim()
+      ? parsed.data.cpfCnpj.trim()
+      : existing.cpfCnpj;
+
     await prisma.client.update({
       where: { id: clientId },
       data: {
-        name: parsed.data.name.trim(),
-        cpfCnpj: parsed.data.cpfCnpj.trim(),
+        name,
+        cpfCnpj,
         email: parsed.data.email ? parsed.data.email.trim() : null,
         phone: parsed.data.phone ? parsed.data.phone.trim() : null,
         birthDate: toDate(parsed.data.birthDate) ?? null,
