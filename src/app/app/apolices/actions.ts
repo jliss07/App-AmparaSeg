@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { put } from "@vercel/blob";
+import { PDFParse } from "pdf-parse";
 import { z } from "zod";
 
 import { requireSession } from "@/lib/auth";
@@ -49,6 +50,215 @@ const createPolicySchema = z.union([
     clientNotes: z.string().optional().or(z.literal("")),
   }),
 ]);
+
+type ParsedPolicyPdfData = {
+  clientName?: string;
+  clientCpfCnpj?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  insurer?: string;
+  policyType?: string;
+  policyNo?: string;
+  startDate?: string;
+  endDate?: string;
+  premium?: string;
+  status?: string;
+};
+
+export type ParsePolicyPdfState =
+  | { error?: string; data?: ParsedPolicyPdfData }
+  | null;
+
+function normalizeSpaces(s: string) {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function extractFirstByLine(
+  lines: string[],
+  patterns: Array<RegExp>,
+): string | null {
+  for (const line of lines) {
+    for (const p of patterns) {
+      const m = line.match(p);
+      if (m && m[1]) return normalizeSpaces(m[1]);
+    }
+  }
+  return null;
+}
+
+function extractFirstMatch(text: string, pattern: RegExp): string | null {
+  const m = text.match(pattern);
+  if (!m) return null;
+  const g = m[1] ?? m[0];
+  return normalizeSpaces(String(g));
+}
+
+function parsePtBrDate(s: string): Date | null {
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+  const d = new Date(year, month - 1, day);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toDateInput(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addOneYear(yyyyMmDd: string): string | null {
+  const d = new Date(yyyyMmDd);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setFullYear(d.getFullYear() + 1);
+  return toDateInput(d);
+}
+
+function parseMoneyToString(value: string) {
+  const s = value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const num = Number(s);
+  if (!Number.isFinite(num)) return null;
+  return num.toFixed(2);
+}
+
+export async function parsePolicyPdfAction(
+  _: ParsePolicyPdfState,
+  formData: FormData,
+): Promise<ParsePolicyPdfState> {
+  await requireSession();
+
+  const file = formData.get("pdf");
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return { error: "Selecione um PDF para ler." };
+  }
+  if (file.type !== "application/pdf") {
+    return { error: "Envie um arquivo PDF válido." };
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { error: "PDF muito grande. Envie um arquivo de até 10MB." };
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const parser = new PDFParse({ data: buffer });
+    let rawText = "";
+    try {
+      const parsed = await parser.getText();
+      rawText = parsed.text || "";
+    } finally {
+      await parser.destroy();
+    }
+
+    const text = normalizeSpaces(rawText);
+    if (!text) {
+      return {
+        error:
+          "Não consegui ler texto desse PDF. Se ele for escaneado, precisa ser um PDF editável (com texto) para extrair automaticamente.",
+      };
+    }
+
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const cpfCnpj =
+      extractFirstMatch(
+        text,
+        /\b(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})\b/,
+      ) ??
+      extractFirstMatch(text, /\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b/);
+
+    const clientName = extractFirstByLine(lines, [
+      /^(?:segurado|proponente|contratante)\s*[:\-]\s*(.+)$/i,
+      /^(?:segurado|proponente|contratante)\s+(.+)$/i,
+    ]);
+
+    const insurer =
+      extractFirstByLine(lines, [
+        /^(?:seguradora|companhia)\s*[:\-]\s*(.+)$/i,
+        /^(?:seguradora|companhia)\s+(.+)$/i,
+      ]) ?? null;
+
+    const policyNo =
+      extractFirstByLine(lines, [
+        /^(?:ap[oó]lice|n[ºo]\s*da\s*ap[oó]lice|n[ºo]\s*ap[oó]lice)\s*[:\-]\s*([a-z0-9\-\/\.]{4,})$/i,
+        /^(?:ap[oó]lice|n[ºo]\s*da\s*ap[oó]lice|n[ºo]\s*ap[oó]lice)\s+([a-z0-9\-\/\.]{4,})$/i,
+      ]) ??
+      extractFirstMatch(
+        text,
+        /(?:ap[oó]lice|n[ºo]\s*ap[oó]lice)\s*[:\-]?\s*([a-z0-9\-\/\.]{4,})/i,
+      );
+
+    const policyType =
+      extractFirstByLine(lines, [
+        /^(?:ramo|tipo)\s*[:\-]\s*(.+)$/i,
+        /^(?:ramo|tipo)\s+(.+)$/i,
+      ]) ?? null;
+
+    const premiumRaw =
+      extractFirstMatch(
+        text,
+        /(?:pr[eê]mio\s*total|pr[eê]mio|valor\s*do\s*pr[eê]mio)\s*[:\-]?\s*(?:r\$\s*)?([\d\.\,]+)/i,
+      ) ?? null;
+    const premium = premiumRaw ? parseMoneyToString(premiumRaw) : null;
+
+    const dateMatches = Array.from(text.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g))
+      .map((m) => m[1])
+      .filter(Boolean);
+
+    let startDate: string | null = null;
+    let endDate: string | null = null;
+
+    const vigLine = lines.find((l) => /vig[eê]ncia/i.test(l));
+    if (vigLine) {
+      const ds = Array.from(vigLine.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g))
+        .map((m) => m[1])
+        .filter(Boolean);
+      if (ds[0]) {
+        const d0 = parsePtBrDate(ds[0]);
+        if (d0) startDate = toDateInput(d0);
+      }
+      if (ds[1]) {
+        const d1 = parsePtBrDate(ds[1]);
+        if (d1) endDate = toDateInput(d1);
+      }
+    }
+
+    if (!startDate && dateMatches[0]) {
+      const d0 = parsePtBrDate(dateMatches[0]);
+      if (d0) startDate = toDateInput(d0);
+    }
+    if (!endDate && dateMatches.length > 1) {
+      const dLast = parsePtBrDate(dateMatches[dateMatches.length - 1]);
+      if (dLast) endDate = toDateInput(dLast);
+    }
+    if (!endDate && startDate) endDate = addOneYear(startDate);
+
+    const data: ParsedPolicyPdfData = {
+      clientName: clientName ?? undefined,
+      clientCpfCnpj: cpfCnpj ?? undefined,
+      insurer: insurer ?? undefined,
+      policyNo: policyNo ?? undefined,
+      policyType: policyType ?? undefined,
+      startDate: startDate ?? undefined,
+      endDate: endDate ?? undefined,
+      premium: premium ?? undefined,
+      status: "ATIVA",
+    };
+
+    return { data };
+  } catch {
+    return { error: "Não foi possível ler esse PDF." };
+  }
+}
 
 export async function createPolicyAction(
   _: ActionState,
