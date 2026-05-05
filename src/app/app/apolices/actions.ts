@@ -112,12 +112,10 @@ export async function parsePolicyPdfAction(
   }
 
   try {
-    const { default: pdfParse } = await import("pdf-parse");
-    const buffer =
-      typeof Buffer !== "undefined"
-        ? Buffer.from(await file.arrayBuffer())
-        : new Uint8Array(await file.arrayBuffer());
-    const res = await pdfParse(buffer);
+    const { PDFParse } = await import("pdf-parse");
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const parser = new PDFParse({ data: buffer });
+    const res = await parser.getText();
     const text = normalizeSpaces(res.text ?? "");
     if (!text) return { error: "Não foi possível ler o conteúdo do PDF." };
 

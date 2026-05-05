@@ -16,10 +16,7 @@ export function ClaimForm({
   clients: ClientOption[];
   policies: PolicyOption[];
   initialClientId?: string;
-  action: (
-    state: ActionState,
-    formData: FormData,
-  ) => ActionState | Promise<ActionState>;
+  action: (state: ActionState, formData: FormData) => Promise<ActionState>;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     action,
@@ -34,14 +31,14 @@ export function ClaimForm({
 
   return (
     <form action={formAction} className="space-y-6">
-      <div className="grid gap-4 rounded-2xl border border-border bg-card p-6 shadow-sm md:grid-cols-2">
+      <div className="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-6 md:grid-cols-2">
         <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-semibold text-foreground">Cliente</label>
+          <label className="text-sm font-medium text-zinc-900">Cliente</label>
           <select
             name="clientId"
             required
             defaultValue={initialClientId ?? ""}
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           >
             <option value="" disabled>
               Selecione...
@@ -52,18 +49,18 @@ export function ClaimForm({
               </option>
             ))}
           </select>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-zinc-500">
             Selecione o cliente; para escolher apólice do cliente, abra esta tela
             pelo cliente.
           </div>
         </div>
 
         <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-semibold text-foreground">Apólice</label>
+          <label className="text-sm font-medium text-zinc-900">Apólice</label>
           <select
             name="policyId"
             defaultValue=""
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           >
             <option value="">Sem apólice</option>
             {policies.map((p) => (
@@ -75,22 +72,22 @@ export function ClaimForm({
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-foreground">Data</label>
+          <label className="text-sm font-medium text-zinc-900">Data</label>
           <input
             name="occurredAt"
             type="date"
             required
             defaultValue={defaultDate}
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-foreground">Status</label>
+          <label className="text-sm font-medium text-zinc-900">Status</label>
           <select
             name="status"
             defaultValue="ABERTO"
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           >
             <option value="ABERTO">ABERTO</option>
             <option value="EM_ANDAMENTO">EM_ANDAMENTO</option>
@@ -99,20 +96,18 @@ export function ClaimForm({
         </div>
 
         <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-semibold text-foreground">
-            Descrição
-          </label>
+          <label className="text-sm font-medium text-zinc-900">Descrição</label>
           <textarea
             name="description"
             required
             rows={4}
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           />
         </div>
       </div>
 
       {state?.error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 shadow-sm">
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
           {state.error}
         </div>
       ) : null}
@@ -120,7 +115,7 @@ export function ClaimForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm hover:brightness-95 disabled:opacity-60"
+        className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
       >
         {pending ? "Salvando..." : "Cadastrar sinistro"}
       </button>

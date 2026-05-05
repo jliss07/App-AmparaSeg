@@ -27,7 +27,7 @@ export function ClientForm({
   submitLabel,
 }: {
   initialValues?: ClientFormValues;
-  action: (state: ActionState, formData: FormData) => Promise<ActionState | void>;
+  action: (state: ActionState, formData: FormData) => Promise<ActionState>;
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
