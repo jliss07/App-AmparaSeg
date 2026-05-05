@@ -8,7 +8,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const policySchema = z.object({
+const updatePolicySchema = z.object({
   clientId: z.string().uuid(),
   insurer: z.string().min(2),
   policyType: z.string().min(2),
@@ -25,7 +25,30 @@ function toDate(value: string) {
   return d;
 }
 
+function toOptionalDate(value: string) {
+  const s = value.trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export type ActionState = { error?: string } | null;
+
+const createPolicySchema = z.union([
+  updatePolicySchema.extend({
+    clientMode: z.literal("existing"),
+  }),
+  updatePolicySchema.omit({ clientId: true }).extend({
+    clientMode: z.literal("new"),
+    clientName: z.string().min(2),
+    clientCpfCnpj: z.string().min(5),
+    clientEmail: z.string().email().optional().or(z.literal("")),
+    clientPhone: z.string().optional().or(z.literal("")),
+    clientBirthDate: z.string().optional().or(z.literal("")),
+    clientNotes: z.string().optional().or(z.literal("")),
+  }),
+]);
 
 export async function createPolicyAction(
   _: ActionState,
@@ -39,8 +62,15 @@ export async function createPolicyAction(
     return { error: "Envie um arquivo PDF válido." };
   }
 
-  const parsed = policySchema.safeParse({
+  const parsed = createPolicySchema.safeParse({
+    clientMode: formData.get("clientMode") ?? "existing",
     clientId: formData.get("clientId"),
+    clientName: formData.get("clientName"),
+    clientCpfCnpj: formData.get("clientCpfCnpj"),
+    clientEmail: formData.get("clientEmail") ?? "",
+    clientPhone: formData.get("clientPhone") ?? "",
+    clientBirthDate: formData.get("clientBirthDate") ?? "",
+    clientNotes: formData.get("clientNotes") ?? "",
     insurer: formData.get("insurer"),
     policyType: formData.get("policyType"),
     policyNo: formData.get("policyNo"),
@@ -53,9 +83,46 @@ export async function createPolicyAction(
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
 
   try {
+    const clientId =
+      parsed.data.clientMode === "existing"
+        ? parsed.data.clientId
+        : (
+            await prisma.client.upsert({
+              where: { cpfCnpj: parsed.data.clientCpfCnpj.trim() },
+              select: { id: true },
+              create: {
+                name: parsed.data.clientName.trim(),
+                cpfCnpj: parsed.data.clientCpfCnpj.trim(),
+                email: parsed.data.clientEmail?.trim()
+                  ? parsed.data.clientEmail.trim()
+                  : null,
+                phone: parsed.data.clientPhone?.trim()
+                  ? parsed.data.clientPhone.trim()
+                  : null,
+                birthDate: toOptionalDate(parsed.data.clientBirthDate ?? "") ?? null,
+                notes: parsed.data.clientNotes?.trim()
+                  ? parsed.data.clientNotes.trim()
+                  : null,
+              },
+              update: {
+                name: parsed.data.clientName.trim(),
+                email: parsed.data.clientEmail?.trim()
+                  ? parsed.data.clientEmail.trim()
+                  : null,
+                phone: parsed.data.clientPhone?.trim()
+                  ? parsed.data.clientPhone.trim()
+                  : null,
+                birthDate: toOptionalDate(parsed.data.clientBirthDate ?? "") ?? null,
+                notes: parsed.data.clientNotes?.trim()
+                  ? parsed.data.clientNotes.trim()
+                  : null,
+              },
+            })
+          ).id;
+
     const created = await prisma.policy.create({
       data: {
-        clientId: parsed.data.clientId,
+        clientId,
         insurer: parsed.data.insurer.trim(),
         policyType: parsed.data.policyType.trim(),
         policyNo: parsed.data.policyNo.trim(),
@@ -84,6 +151,7 @@ export async function createPolicyAction(
     }
 
     revalidatePath("/app/apolices");
+    revalidatePath("/app/clientes");
     redirect(`/app/apolices/${created.id}`);
     return null;
   } catch {
@@ -99,7 +167,7 @@ export async function updatePolicyAction(
   formData: FormData,
 ): Promise<ActionState> {
   await requireSession();
-  const parsed = policySchema.safeParse({
+  const parsed = updatePolicySchema.safeParse({
     clientId: formData.get("clientId"),
     insurer: formData.get("insurer"),
     policyType: formData.get("policyType"),

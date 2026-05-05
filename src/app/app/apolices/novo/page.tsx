@@ -55,6 +55,7 @@ export default async function NewPolicyPage({
         action={createPolicyAction}
         submitLabel="Cadastrar"
         allowPdfUpload
+        allowInlineClientCreate
       />
     </div>
   );
