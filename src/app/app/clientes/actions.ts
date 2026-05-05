@@ -41,6 +41,14 @@ export type ImportClientsState =
     }
   | null;
 
+function generatePolicyNo() {
+  const uuid =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `AUTO-${uuid}`;
+}
+
 function normalizeHeader(value: unknown) {
   const s = String(value ?? "")
     .trim()
@@ -190,13 +198,12 @@ export async function importClientsAction(
   if (includePolicies) {
     const ok =
       hasAny(insurerKeys) &&
-      hasAny(policyNoKeys) &&
       hasAny(policyTypeKeys) &&
       hasAny(startDateKeys);
     if (!ok) {
       return {
         error:
-          "Para importar apólices, inclua as colunas: Seguradora, Tipo, Número da apólice e Início (ou Vigência).",
+          "Para importar apólices, inclua as colunas: Seguradora, Tipo e Início (ou Vigência).",
       };
     }
   }
@@ -275,7 +282,8 @@ export async function importClientsAction(
 
         const insurer = toText(pickCell(row, headerIndex, insurerKeys));
         const policyType = toText(pickCell(row, headerIndex, policyTypeKeys));
-        const policyNo = toText(pickCell(row, headerIndex, policyNoKeys));
+        const policyNo =
+          toText(pickCell(row, headerIndex, policyNoKeys)) ?? generatePolicyNo();
         const startDate = parseAnyDate(pickCell(row, headerIndex, startDateKeys));
         const endDateFromSheet = parseAnyDate(pickCell(row, headerIndex, endDateKeys));
         const endDate =
@@ -290,13 +298,13 @@ export async function importClientsAction(
         const premium = parsePremium(pickCell(row, headerIndex, premiumKeys));
         const status = toText(pickCell(row, headerIndex, statusKeys)) ?? "ATIVA";
 
-        if (!insurer || !policyType || !policyNo || !startDate || !endDate) {
+        if (!insurer || !policyType || !startDate || !endDate) {
           policiesSkipped += 1;
           if (rowErrors.length < 20) {
             rowErrors.push({
               row: rowNumber,
               message:
-                "Dados de apólice incompletos (Seguradora, Tipo, Número e Início/Vigência).",
+                "Dados de apólice incompletos (Seguradora, Tipo e Início/Vigência).",
             });
           }
         } else {

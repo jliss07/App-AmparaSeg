@@ -33,7 +33,6 @@ export default async function PoliciesPage({
         id: string;
         insurer: string;
         policyType: string;
-        policyNo: string;
         endDate: Date;
         status: string;
         pdfUrl: string | null;
@@ -56,7 +55,6 @@ export default async function PoliciesPage({
       )
       AND (
         ${query === ""} = true
-        OR p."policyNo" ILIKE ${"%" + query + "%"}
         OR p."insurer" ILIKE ${"%" + query + "%"}
         OR c."name" ILIKE ${"%" + query + "%"}
         OR c."cpfCnpj" ILIKE ${"%" + query + "%"}
@@ -82,7 +80,7 @@ export default async function PoliciesPage({
             Apólices
           </h1>
           <p className="text-sm text-muted-foreground">
-            Pesquisa por apólice e filtro de vencimento por mês.
+            Pesquisa por seguradora/cliente e filtro de vencimento por mês.
           </p>
         </div>
         <Link
@@ -96,7 +94,7 @@ export default async function PoliciesPage({
       <form className="grid gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm md:grid-cols-3">
         <div className="space-y-2 md:col-span-2">
           <label className="text-sm font-semibold text-foreground">
-            Pesquisar (número, seguradora, cliente)
+            Pesquisar (seguradora, cliente)
           </label>
           <input
             name="q"
@@ -159,10 +157,10 @@ export default async function PoliciesPage({
                       href={`/app/apolices/${p.id}`}
                       className="font-semibold text-foreground hover:underline decoration-primary/60 underline-offset-4"
                     >
-                      {p.policyNo}
+                      {p.insurer}
                     </Link>
                     <div className="text-xs text-muted-foreground">
-                      {p.insurer} • {p.policyType} • {p.status}
+                      {p.policyType} • {p.status}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700">

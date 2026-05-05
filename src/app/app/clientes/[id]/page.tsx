@@ -265,7 +265,7 @@ export default async function ClientDetailsPage({
                   <thead className="border-b border-border bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3">Seguradora</th>
-                      <th className="px-4 py-3">Número</th>
+                      <th className="px-4 py-3">Tipo</th>
                       <th className="px-4 py-3">Vencimento</th>
                     </tr>
                   </thead>
@@ -275,15 +275,15 @@ export default async function ClientDetailsPage({
                         key={p.id}
                         className="border-b border-border last:border-0 hover:bg-muted/50"
                       >
-                        <td className="px-4 py-3 text-slate-700">{p.insurer}</td>
                         <td className="px-4 py-3">
                           <Link
                             href={`/app/apolices/${p.id}`}
                             className="font-semibold text-foreground hover:underline decoration-primary/60 underline-offset-4"
                           >
-                            {p.policyNo}
+                            {p.insurer}
                           </Link>
                         </td>
+                        <td className="px-4 py-3 text-slate-700">{p.policyType}</td>
                         <td className="px-4 py-3 text-slate-700">
                           {formatDate(p.endDate)}
                         </td>

@@ -77,7 +77,7 @@ export default async function PolicyDetailsPage({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Apólice {policy.policyNo}
+            Apólice
           </h1>
           <div className="text-sm text-muted-foreground">
             Cliente:{" "}
@@ -117,7 +117,6 @@ export default async function PolicyDetailsPage({
                 clientId: policy.clientId,
                 insurer: policy.insurer,
                 policyType: policy.policyType,
-                policyNo: policy.policyNo,
                 startDate: policy.startDate,
                 endDate: policy.endDate,
                 premium: policy.premium?.toString() ?? "",

@@ -10,7 +10,6 @@ type PolicyFormValues = {
   clientId?: string;
   insurer?: string;
   policyType?: string;
-  policyNo?: string;
   startDate?: Date;
   endDate?: Date;
   premium?: string | null;
@@ -59,7 +58,6 @@ export function PolicyForm({
   const [clientPhone, setClientPhone] = useState("");
   const [insurer, setInsurer] = useState(initialValues?.insurer ?? "");
   const [policyType, setPolicyType] = useState(initialValues?.policyType ?? "");
-  const [policyNo, setPolicyNo] = useState(initialValues?.policyNo ?? "");
   const [status, setStatus] = useState(initialValues?.status ?? "ATIVA");
   const [startDate, setStartDate] = useState(toDateInputValue(initialValues?.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(initialValues?.endDate));
@@ -187,19 +185,6 @@ export function PolicyForm({
             required
             value={policyType}
             onChange={(e) => setPolicyType(e.target.value)}
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-foreground">
-            Número da apólice
-          </label>
-          <input
-            name="policyNo"
-            required
-            value={policyNo}
-            onChange={(e) => setPolicyNo(e.target.value)}
             className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
           />
         </div>

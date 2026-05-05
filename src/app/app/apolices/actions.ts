@@ -12,7 +12,6 @@ const updatePolicySchema = z.object({
   clientId: z.string().uuid(),
   insurer: z.string().min(2),
   policyType: z.string().min(2),
-  policyNo: z.string().min(2),
   startDate: z.string().min(4),
   endDate: z.string().min(4),
   premium: z.string().optional().or(z.literal("")),
@@ -50,6 +49,14 @@ const createPolicySchema = z.union([
   }),
 ]);
 
+function generatePolicyNo() {
+  const uuid =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `AUTO-${uuid}`;
+}
+
 export async function createPolicyAction(
   _: ActionState,
   formData: FormData,
@@ -73,7 +80,6 @@ export async function createPolicyAction(
     clientNotes: formData.get("clientNotes") ?? "",
     insurer: formData.get("insurer"),
     policyType: formData.get("policyType"),
-    policyNo: formData.get("policyNo"),
     startDate: formData.get("startDate"),
     endDate: formData.get("endDate"),
     premium: formData.get("premium") ?? "",
@@ -125,7 +131,7 @@ export async function createPolicyAction(
         clientId,
         insurer: parsed.data.insurer.trim(),
         policyType: parsed.data.policyType.trim(),
-        policyNo: parsed.data.policyNo.trim(),
+        policyNo: generatePolicyNo(),
         startDate: toDate(parsed.data.startDate),
         endDate: toDate(parsed.data.endDate),
         premium: parsed.data.premium?.trim() ? parsed.data.premium.trim() : null,
@@ -171,7 +177,6 @@ export async function updatePolicyAction(
     clientId: formData.get("clientId"),
     insurer: formData.get("insurer"),
     policyType: formData.get("policyType"),
-    policyNo: formData.get("policyNo"),
     startDate: formData.get("startDate"),
     endDate: formData.get("endDate"),
     premium: formData.get("premium") ?? "",
@@ -187,7 +192,6 @@ export async function updatePolicyAction(
         clientId: parsed.data.clientId,
         insurer: parsed.data.insurer.trim(),
         policyType: parsed.data.policyType.trim(),
-        policyNo: parsed.data.policyNo.trim(),
         startDate: toDate(parsed.data.startDate),
         endDate: toDate(parsed.data.endDate),
         premium: parsed.data.premium?.trim() ? parsed.data.premium.trim() : null,

@@ -60,8 +60,8 @@ export default function ImportClientsPage() {
               Observações.
             </div>
             <div className="text-xs text-muted-foreground">
-              Apólices: Seguradora, Tipo, Número da apólice, Início, Vencimento,
-              Prêmio, Status (opcional).
+              Apólices: Seguradora, Tipo, Início, Vencimento, Prêmio, Status
+              (opcional).
             </div>
             <div className="text-xs text-muted-foreground">
               Obrigatórias: Nome e CPF/CNPJ. Para importar apólices também, marque
