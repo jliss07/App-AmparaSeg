@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { put } from "@vercel/blob";
+import pdfParse from "pdf-parse";
 import { z } from "zod";
 
 import { requireSession } from "@/lib/auth";
@@ -18,12 +19,6 @@ const updatePolicySchema = z.object({
   status: z.string().optional().or(z.literal("")),
 });
 
-function toDate(value: string) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) throw new Error("invalid date");
-  return d;
-}
-
 function toOptionalDate(value: string) {
   const s = value.trim();
   if (!s) return null;
@@ -33,6 +28,25 @@ function toOptionalDate(value: string) {
 }
 
 export type ActionState = { error?: string } | null;
+
+export type ParsePolicyPdfState =
+  | {
+      error?: string;
+      data?: {
+        clientName?: string;
+        clientCpfCnpj?: string;
+        clientEmail?: string;
+        clientPhone?: string;
+        insurer?: string;
+        policyType?: string;
+        policyNo?: string;
+        startDate?: string;
+        endDate?: string;
+        premium?: string;
+        status?: string;
+      };
+    }
+  | null;
 
 const createPolicySchema = z.union([
   updatePolicySchema.extend({
@@ -63,6 +77,107 @@ function generatePolicyNo() {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `AUTO-${uuid}`;
+}
+
+function normalizeSpaces(s: string) {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function toDateInputFromBr(value: string | null) {
+  if (!value) return null;
+  const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const yyyy = m[3];
+  const mm = m[2];
+  const dd = m[1];
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function pick(text: string, re: RegExp) {
+  const m = text.match(re);
+  const v = m?.[1] ? normalizeSpaces(m[1]) : "";
+  return v ? v : null;
+}
+
+export async function parsePolicyPdfAction(
+  _: ParsePolicyPdfState,
+  formData: FormData,
+): Promise<ParsePolicyPdfState> {
+  await requireSession();
+  const file = formData.get("pdf");
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return { error: "Selecione um PDF." };
+  }
+  if (file.type !== "application/pdf") {
+    return { error: "Envie um arquivo PDF válido." };
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const res = await pdfParse(buffer);
+    const text = normalizeSpaces(res.text ?? "");
+    if (!text) return { error: "Não foi possível ler o conteúdo do PDF." };
+
+    const clientCpfCnpj = pick(text, /\bcpf\/?cnpj\b\s*[:\-]?\s*([0-9.\-\/]{5,})/i);
+    const clientName =
+      pick(
+        text,
+        /\bsegurado\b\s*[:\-]?\s*([A-ZÀ-ÿ0-9().\s]{3,})(?=\bcpf\/?cnpj\b|\binscricao\b|\bendereco\b|$)/i,
+      ) ??
+      pick(
+        text,
+        /\bproponente\b\s*[:\-]?\s*([A-ZÀ-ÿ0-9().\s]{3,})(?=\bcpf\/?cnpj\b|\binscricao\b|\bendereco\b|$)/i,
+      );
+
+    const insurer =
+      pick(text, /\bseguradora\b\s*[:\-]?\s*([A-ZÀ-ÿ0-9\/\-. ]{2,})(?=\bap[oó]lice\b|\bn[ºo]\b|\bvig[eê]ncia\b|\bin[ií]cio\b|$)/i) ??
+      pick(text, /\bcia\b\.?\s*[:\-]?\s*([A-ZÀ-ÿ0-9\/\-. ]{2,})(?=\bap[oó]lice\b|\bn[ºo]\b|\bvig[eê]ncia\b|\bin[ií]cio\b|$)/i);
+
+    const policyNo =
+      pick(text, /\bap[oó]lice\b\s*(?:n[ºo]|n|num(?:ero)?)?\s*[:\-]?\s*([A-Z0-9.\-\/]{4,})/i) ??
+      pick(text, /\bn[ºo]\s*da\s*ap[oó]lice\b\s*[:\-]?\s*([A-Z0-9.\-\/]{4,})/i);
+
+    const policyType =
+      pick(text, /\bramo\b\s*[:\-]?\s*([A-ZÀ-ÿ0-9\/\-. ]{2,})(?=\bap[oó]lice\b|\bvig[eê]ncia\b|$)/i) ??
+      pick(text, /\btipo\b\s*[:\-]?\s*([A-ZÀ-ÿ0-9\/\-. ]{2,})(?=\bap[oó]lice\b|\bvig[eê]ncia\b|$)/i);
+
+    const startBr =
+      pick(text, /\bin[ií]cio\b\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i) ??
+      pick(text, /\bvig[eê]ncia\b\s*(?:de)?\s*(\d{2}\/\d{2}\/\d{4})/i);
+    const endBr =
+      pick(text, /\b(?:fim|vencimento)\b\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i) ??
+      pick(text, /\bvig[eê]ncia\b.*?\b(?:a|at[eé])\b\s*(\d{2}\/\d{2}\/\d{4})/i);
+
+    const startDate = toDateInputFromBr(startBr);
+    const endDate = toDateInputFromBr(endBr);
+
+    const premium =
+      pick(text, /\bpr[eê]mio\b(?:\s+total)?\s*[:\-]?\s*(?:r\$)?\s*([0-9.\-]+,[0-9]{2})/i) ??
+      pick(text, /\bvalor\b\s*(?:do\s*)?pr[eê]mio\b\s*[:\-]?\s*(?:r\$)?\s*([0-9.\-]+,[0-9]{2})/i);
+
+    const clientEmail = pick(text, /\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i);
+    const clientPhone = pick(
+      text,
+      /\b(\(?\d{2}\)?\s*\d{4,5}[-.\s]?\d{4})\b/i,
+    );
+
+    return {
+      data: {
+        clientName: clientName ?? undefined,
+        clientCpfCnpj: clientCpfCnpj ?? undefined,
+        clientEmail: clientEmail ?? undefined,
+        clientPhone: clientPhone ?? undefined,
+        insurer: insurer ?? undefined,
+        policyType: policyType ?? undefined,
+        policyNo: policyNo ?? undefined,
+        startDate: startDate ?? undefined,
+        endDate: endDate ?? undefined,
+        premium: premium ? premium.replace(/\./g, "").replace(",", ".") : undefined,
+      },
+    };
+  } catch {
+    return { error: "Não foi possível ler o PDF." };
+  }
 }
 
 export async function createPolicyAction(
