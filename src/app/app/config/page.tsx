@@ -24,7 +24,13 @@ function item(label: string, ok: boolean, detail?: string) {
 }
 
 export default async function ConfigPage() {
-  const hasDbUrl = Boolean(process.env.DATABASE_URL);
+  const hasDbUrl = Boolean(
+    process.env.DATABASE_URL ||
+      process.env.POSTGRES_PRISMA_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.DATABASE_URL_UNPOOLED ||
+      process.env.POSTGRES_URL_NON_POOLING,
+  );
   const hasAdminEmail = Boolean(process.env.ADMIN_EMAIL);
   const hasAdminPassword = Boolean(
     process.env.ADMIN_PASSWORD_HASH ?? process.env.ADMIN_PASSWORD,
