@@ -4,6 +4,12 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 function monthOptions() {
   return Array.from({ length: 12 }, (_, i) => {
     const month = i + 1;
@@ -25,14 +31,20 @@ export default async function PoliciesPage({
 }) {
   const { q, mes, clienteId } = await searchParams;
   const query = q?.trim() ?? "";
-  const month = mes ? Number(mes) : null;
-  const clientId = clienteId?.trim() || null;
+  const monthValue = mes ? Number(mes) : null;
+  const month =
+    monthValue && Number.isFinite(monthValue) && monthValue >= 1 && monthValue <= 12
+      ? monthValue
+      : null;
+  const clientIdRaw = clienteId?.trim() ?? "";
+  const clientId = clientIdRaw && isUuid(clientIdRaw) ? clientIdRaw : null;
 
   let policies:
     | Array<{
         id: string;
         insurer: string;
         policyType: string;
+        policyNo: string;
         endDate: Date;
         status: string;
         pdfUrl: string | null;
@@ -46,8 +58,8 @@ export default async function PoliciesPage({
       FROM "Policy" p
       JOIN "Client" c ON c."id" = p."clientId"
       WHERE (
-        ${clientId === null} = true
-        OR p."clientId" = ${clientId ?? ""}
+        (${clientId}::uuid IS NULL)
+        OR p."clientId" = ${clientId}::uuid
       )
       AND (
         ${month === null} = true
@@ -55,6 +67,7 @@ export default async function PoliciesPage({
       )
       AND (
         ${query === ""} = true
+        OR p."policyNo" ILIKE ${"%" + query + "%"}
         OR p."insurer" ILIKE ${"%" + query + "%"}
         OR c."name" ILIKE ${"%" + query + "%"}
         OR c."cpfCnpj" ILIKE ${"%" + query + "%"}
@@ -76,40 +89,40 @@ export default async function PoliciesPage({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
             Apólices
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Pesquisa por seguradora/cliente e filtro de vencimento por mês.
+          <p className="text-sm text-zinc-600">
+            Pesquisa por apólice e filtro de vencimento por mês.
           </p>
         </div>
         <Link
           href="/app/apolices/novo"
-          className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm hover:brightness-95"
+          className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
         >
           Nova apólice
         </Link>
       </div>
 
-      <form className="grid gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm md:grid-cols-3">
+      <form className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 md:grid-cols-3">
         <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-semibold text-foreground">
-            Pesquisar (seguradora, cliente)
+          <label className="text-sm font-medium text-zinc-900">
+            Pesquisar (número, seguradora, cliente)
           </label>
           <input
             name="q"
             defaultValue={query}
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           />
         </div>
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-foreground">
+          <label className="text-sm font-medium text-zinc-900">
             Vencimento (mês)
           </label>
           <select
             name="mes"
             defaultValue={month?.toString() ?? ""}
-            className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-300"
           >
             <option value="">Todos</option>
             {monthOptions().map((m) => (
@@ -121,24 +134,24 @@ export default async function PoliciesPage({
         </div>
         <input type="hidden" name="clienteId" value={clientId ?? ""} />
         <div className="md:col-span-3">
-          <button className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-muted">
+          <button className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50">
             Aplicar filtros
           </button>
         </div>
       </form>
 
       {!policies ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-sm">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
           Configure o banco de dados para listar apólices.
         </div>
       ) : policies.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
+        <div className="rounded-2xl border border-zinc-200 bg-white px-5 py-6 text-sm text-zinc-600">
           Nenhuma apólice encontrada.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-border bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-zinc-600">
               <tr>
                 <th className="px-4 py-3">Apólice</th>
                 <th className="px-4 py-3">Cliente</th>
@@ -148,37 +161,34 @@ export default async function PoliciesPage({
             </thead>
             <tbody>
               {policies.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-b border-border last:border-0 hover:bg-muted/50"
-                >
+                <tr key={p.id} className="border-b border-zinc-200 last:border-0">
                   <td className="px-4 py-3">
                     <Link
                       href={`/app/apolices/${p.id}`}
-                      className="font-semibold text-foreground hover:underline decoration-primary/60 underline-offset-4"
+                      className="font-semibold text-zinc-900 hover:underline"
                     >
-                      {p.insurer}
+                      {p.policyNo}
                     </Link>
-                    <div className="text-xs text-muted-foreground">
-                      {p.policyType} • {p.status}
+                    <div className="text-xs text-zinc-500">
+                      {p.insurer} • {p.policyType} • {p.status}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-700">
+                  <td className="px-4 py-3 text-zinc-700">
                     <Link
                       href={`/app/clientes/${p.client.id}`}
-                      className="hover:underline decoration-primary/60 underline-offset-4"
+                      className="hover:underline"
                     >
                       {p.client.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-slate-700">{formatDate(p.endDate)}</td>
-                  <td className="px-4 py-3 text-slate-700">
+                  <td className="px-4 py-3 text-zinc-700">{formatDate(p.endDate)}</td>
+                  <td className="px-4 py-3 text-zinc-700">
                     {p.pdfUrl ? (
                       <a
                         href={p.pdfUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-semibold text-foreground hover:underline decoration-primary/60 underline-offset-4"
+                        className="text-zinc-900 hover:underline"
                       >
                         Ver PDF
                       </a>
