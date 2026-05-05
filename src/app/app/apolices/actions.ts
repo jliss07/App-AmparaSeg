@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { put } from "@vercel/blob";
-import pdfParse from "pdf-parse";
 import { z } from "zod";
 
 import { requireSession } from "@/lib/auth";
@@ -113,7 +112,11 @@ export async function parsePolicyPdfAction(
   }
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const { default: pdfParse } = await import("pdf-parse");
+    const buffer =
+      typeof Buffer !== "undefined"
+        ? Buffer.from(await file.arrayBuffer())
+        : new Uint8Array(await file.arrayBuffer());
     const res = await pdfParse(buffer);
     const text = normalizeSpaces(res.text ?? "");
     if (!text) return { error: "Não foi possível ler o conteúdo do PDF." };
