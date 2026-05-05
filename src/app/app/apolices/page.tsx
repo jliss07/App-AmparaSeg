@@ -53,34 +53,36 @@ export default async function PoliciesPage({
     | null = null;
 
   try {
-    const ids = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT p."id"
-      FROM "Policy" p
-      JOIN "Client" c ON c."id" = p."clientId"
-      WHERE (
-        (${clientId}::uuid IS NULL)
-        OR p."clientId" = ${clientId}::uuid
-      )
-      AND (
-        ${month === null} = true
-        OR EXTRACT(MONTH FROM p."endDate") = ${month ?? 0}
-      )
-      AND (
-        ${query === ""} = true
-        OR p."policyNo" ILIKE ${"%" + query + "%"}
-        OR p."insurer" ILIKE ${"%" + query + "%"}
-        OR c."name" ILIKE ${"%" + query + "%"}
-        OR c."cpfCnpj" ILIKE ${"%" + query + "%"}
-      )
-      ORDER BY p."endDate" ASC
-      LIMIT 200
-    `;
-
     policies = await prisma.policy.findMany({
-      where: { id: { in: ids.map((r) => r.id) } },
+      where: {
+        ...(clientId ? { clientId } : {}),
+        ...(query
+          ? {
+              OR: [
+                { policyNo: { contains: query, mode: "insensitive" } },
+                { insurer: { contains: query, mode: "insensitive" } },
+                {
+                  client: {
+                    is: {
+                      OR: [
+                        { name: { contains: query, mode: "insensitive" } },
+                        { cpfCnpj: { contains: query, mode: "insensitive" } },
+                      ],
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
       include: { client: { select: { id: true, name: true } } },
       orderBy: { endDate: "asc" },
     });
+    if (month !== null) {
+      policies = policies.filter((p) => p.endDate.getMonth() + 1 === month).slice(0, 200);
+    } else {
+      policies = policies.slice(0, 200);
+    }
   } catch {
     policies = null;
   }

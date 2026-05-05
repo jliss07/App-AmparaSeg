@@ -20,8 +20,26 @@ function pickDatabaseUrl() {
   return value;
 }
 
+function normalizeDatabaseUrl(url: string) {
+  try {
+    const u = new URL(url);
+    const isPooler = u.hostname.includes("-pooler.");
+    if (isPooler) {
+      if (!u.searchParams.has("sslmode")) u.searchParams.set("sslmode", "require");
+      if (!u.searchParams.has("pgbouncer")) u.searchParams.set("pgbouncer", "true");
+      if (!u.searchParams.has("connection_limit")) u.searchParams.set("connection_limit", "1");
+      if (!u.searchParams.has("statement_cache_size")) {
+        u.searchParams.set("statement_cache_size", "0");
+      }
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function createClient() {
-  const databaseUrl = pickDatabaseUrl();
+  const databaseUrl = normalizeDatabaseUrl(pickDatabaseUrl());
   if (!databaseUrl) {
     return new Proxy(
       {},

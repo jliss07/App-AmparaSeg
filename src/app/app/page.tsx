@@ -22,18 +22,19 @@ export default async function DashboardPage() {
   } | null = null;
 
   try {
-    const [clients, policiesExpiring30, birthdaysRow] = await Promise.all([
+    const [clients, policiesExpiring30, birthdayRows] = await Promise.all([
       prisma.client.count(),
       prisma.policy.count({ where: { endDate: { gte: now, lte: in30Days } } }),
-      prisma.$queryRaw<Array<{ count: number }>>`
-        SELECT COUNT(*)::int as count
-        FROM "Client"
-        WHERE "birthDate" IS NOT NULL
-          AND EXTRACT(MONTH FROM "birthDate") = ${month}
-      `,
+      prisma.client.findMany({
+        where: { birthDate: { not: null } },
+        select: { birthDate: true },
+      }),
     ]);
 
-    const birthdaysThisMonth = birthdaysRow[0]?.count ?? 0;
+    const birthdaysThisMonth = birthdayRows.reduce((acc, r) => {
+      if (!r.birthDate) return acc;
+      return r.birthDate.getMonth() + 1 === month ? acc + 1 : acc;
+    }, 0);
     stats = { clients, policiesExpiring30, birthdaysThisMonth };
   } catch {
     stats = null;
