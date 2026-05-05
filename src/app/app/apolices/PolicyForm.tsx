@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useState } from "react";
 
-import { parsePolicyPdfAction, type ActionState } from "./actions";
+import { type ActionState } from "./actions";
 
 type ClientOption = { id: string; name: string };
 
@@ -64,9 +64,6 @@ export function PolicyForm({
   const [startDate, setStartDate] = useState(toDateInputValue(initialValues?.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(initialValues?.endDate));
   const [premium, setPremium] = useState(initialValues?.premium ?? "");
-  const [pdfParsePending, setPdfParsePending] = useState(false);
-  const [pdfParseError, setPdfParseError] = useState<string | null>(null);
-  const pdfInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
     <form action={formAction} encType="multipart/form-data" className="space-y-6">
@@ -267,61 +264,8 @@ export function PolicyForm({
               name="pdf"
               type="file"
               accept="application/pdf"
-              ref={pdfInputRef}
               className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground hover:file:brightness-95"
             />
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                disabled={pdfParsePending}
-                onClick={async () => {
-                  const file = pdfInputRef.current?.files?.[0];
-                  if (!file) {
-                    setPdfParseError("Selecione um PDF para preencher automaticamente.");
-                    return;
-                  }
-                  setPdfParseError(null);
-                  setPdfParsePending(true);
-                  try {
-                    const fd = new FormData();
-                    fd.set("pdf", file);
-                    const res = await parsePolicyPdfAction(null, fd);
-                    if (res?.error) {
-                      setPdfParseError(res.error);
-                      return;
-                    }
-                    const d = res?.data ?? {};
-                    if (d.clientName || d.clientCpfCnpj) {
-                      setClientMode(allowInlineClientCreate ? "new" : "existing");
-                    }
-                    if (d.clientName) setClientName(d.clientName);
-                    if (d.clientCpfCnpj) setClientCpfCnpj(d.clientCpfCnpj);
-                    if (d.clientEmail) setClientEmail(d.clientEmail);
-                    if (d.clientPhone) setClientPhone(d.clientPhone);
-                    if (d.insurer) setInsurer(d.insurer);
-                    if (d.policyType) setPolicyType(d.policyType);
-                    if (d.policyNo) setPolicyNo(d.policyNo);
-                    if (d.status) setStatus(d.status);
-                    if (d.startDate) setStartDate(d.startDate);
-                    if (d.endDate) setEndDate(d.endDate);
-                    if (d.premium) setPremium(d.premium);
-                  } finally {
-                    setPdfParsePending(false);
-                  }
-                }}
-                className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-muted disabled:opacity-60"
-              >
-                {pdfParsePending ? "Lendo PDF..." : "Preencher pelo PDF"}
-              </button>
-              <div className="text-xs text-muted-foreground">
-                Lê o texto do PDF e tenta preencher os campos automaticamente.
-              </div>
-            </div>
-            {pdfParseError ? (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
-                {pdfParseError}
-              </div>
-            ) : null}
           </div>
         ) : null}
       </div>
