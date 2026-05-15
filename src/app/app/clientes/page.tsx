@@ -85,12 +85,20 @@ export default async function ClientsPage({
             Cadastro, pesquisa e aniversários por mês.
           </p>
         </div>
-        <Link
-          href="/app/clientes/novo"
-          className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
-        >
-          Novo cliente
-        </Link>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <Link
+            href="/app/clientes/importar"
+            className="inline-flex items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            Importar Excel
+          </Link>
+          <Link
+            href="/app/clientes/novo"
+            className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            Novo cliente
+          </Link>
+        </div>
       </div>
 
       <form className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 md:grid-cols-3">
