@@ -9,11 +9,15 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 async function syncClientStatus(clientId: string) {
-  const policies = await prisma.policy.count({ where: { clientId } });
-  await prisma.client.update({
-    where: { id: clientId },
-    data: { status: policies > 0 ? "ATIVO" : "INATIVO" },
-  });
+  try {
+    const policies = await prisma.policy.count({ where: { clientId } });
+    await prisma.client.update({
+      where: { id: clientId },
+      data: { status: policies > 0 ? "ATIVO" : "INATIVO" },
+    });
+  } catch {
+    return;
+  }
 }
 
 const updatePolicySchema = z.object({

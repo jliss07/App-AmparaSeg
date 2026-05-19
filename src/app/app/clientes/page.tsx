@@ -31,7 +31,6 @@ export default async function ClientsPage({
         email: string | null;
         phone: string | null;
         birthDate: Date | null;
-        status: "ATIVO" | "INATIVO";
         _count: { vehicles: number; policies: number; claims: number };
       }>
     | null = null;
@@ -50,7 +49,15 @@ export default async function ClientsPage({
               }
             : {}),
         },
-        include: { _count: true },
+        select: {
+          id: true,
+          name: true,
+          cpfCnpj: true,
+          email: true,
+          phone: true,
+          birthDate: true,
+          _count: { select: { vehicles: true, policies: true, claims: true } },
+        },
         orderBy: { name: "asc" },
       });
       clients = clients
@@ -66,34 +73,18 @@ export default async function ClientsPage({
               ],
             }
           : undefined,
-        include: { _count: true },
+        select: {
+          id: true,
+          name: true,
+          cpfCnpj: true,
+          email: true,
+          phone: true,
+          birthDate: true,
+          _count: { select: { vehicles: true, policies: true, claims: true } },
+        },
         orderBy: { name: "asc" },
         take: 200,
       });
-    }
-
-    const activeIds = clients
-      .filter((c) => c._count.policies > 0 && c.status !== "ATIVO")
-      .map((c) => c.id);
-    const inactiveIds = clients
-      .filter((c) => c._count.policies === 0 && c.status !== "INATIVO")
-      .map((c) => c.id);
-
-    if (activeIds.length) {
-      await prisma.client.updateMany({
-        where: { id: { in: activeIds } },
-        data: { status: "ATIVO" },
-      });
-      clients = clients.map((c) => (activeIds.includes(c.id) ? { ...c, status: "ATIVO" } : c));
-    }
-    if (inactiveIds.length) {
-      await prisma.client.updateMany({
-        where: { id: { in: inactiveIds } },
-        data: { status: "INATIVO" },
-      });
-      clients = clients.map((c) =>
-        inactiveIds.includes(c.id) ? { ...c, status: "INATIVO" } : c,
-      );
     }
   } catch {
     clients = null;
