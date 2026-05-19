@@ -31,6 +31,7 @@ export default async function ClientsPage({
         email: string | null;
         phone: string | null;
         birthDate: Date | null;
+        status: "ATIVO" | "INATIVO";
         _count: { vehicles: number; policies: number; claims: number };
       }>
     | null = null;
@@ -69,6 +70,30 @@ export default async function ClientsPage({
         orderBy: { name: "asc" },
         take: 200,
       });
+    }
+
+    const activeIds = clients
+      .filter((c) => c._count.policies > 0 && c.status !== "ATIVO")
+      .map((c) => c.id);
+    const inactiveIds = clients
+      .filter((c) => c._count.policies === 0 && c.status !== "INATIVO")
+      .map((c) => c.id);
+
+    if (activeIds.length) {
+      await prisma.client.updateMany({
+        where: { id: { in: activeIds } },
+        data: { status: "ATIVO" },
+      });
+      clients = clients.map((c) => (activeIds.includes(c.id) ? { ...c, status: "ATIVO" } : c));
+    }
+    if (inactiveIds.length) {
+      await prisma.client.updateMany({
+        where: { id: { in: inactiveIds } },
+        data: { status: "INATIVO" },
+      });
+      clients = clients.map((c) =>
+        inactiveIds.includes(c.id) ? { ...c, status: "INATIVO" } : c,
+      );
     }
   } catch {
     clients = null;
@@ -151,6 +176,7 @@ export default async function ClientsPage({
               <tr>
                 <th className="px-4 py-3">Cliente</th>
                 <th className="px-4 py-3">CPF/CNPJ</th>
+                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Contato</th>
                 <th className="px-4 py-3">Itens</th>
               </tr>
@@ -167,6 +193,18 @@ export default async function ClientsPage({
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{c.cpfCnpj}</td>
+                  <td className="px-4 py-3 text-zinc-700">
+                    <span
+                      className={[
+                        "inline-flex rounded-full px-2 py-1 text-xs font-semibold",
+                        c._count.policies > 0
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-zinc-100 text-zinc-700",
+                      ].join(" ")}
+                    >
+                      {c._count.policies > 0 ? "Ativo" : "Inativo"}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-zinc-700">
                     <div>{c.phone ?? "—"}</div>
                     <div className="text-xs text-zinc-500">{c.email ?? "—"}</div>

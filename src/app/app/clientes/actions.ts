@@ -8,6 +8,14 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+async function syncClientStatus(clientId: string) {
+  const policies = await prisma.policy.count({ where: { clientId } });
+  await prisma.client.update({
+    where: { id: clientId },
+    data: { status: policies > 0 ? "ATIVO" : "INATIVO" },
+  });
+}
+
 const clientSchema = z.object({
   name: z.string().optional().or(z.literal("")),
   cpfCnpj: z.string().optional().or(z.literal("")),
@@ -294,7 +302,7 @@ export async function importClientsAction(
             const policyNoValue = policyNo.trim();
             const existingPolicy = await prisma.policy.findFirst({
               where: { insurer: insurerValue, policyNo: policyNoValue },
-              select: { id: true },
+              select: { id: true, clientId: true },
             });
 
             if (existingPolicy) {
@@ -311,6 +319,9 @@ export async function importClientsAction(
                   status: status.trim(),
                 },
               });
+              if (existingPolicy.clientId !== savedClient.id) {
+                await syncClientStatus(existingPolicy.clientId);
+              }
               policiesUpdated += 1;
             } else {
               await prisma.policy.create({
@@ -327,6 +338,7 @@ export async function importClientsAction(
               });
               policiesCreated += 1;
             }
+            await syncClientStatus(savedClient.id);
           } catch {
             policiesSkipped += 1;
             if (rowErrors.length < 20) {

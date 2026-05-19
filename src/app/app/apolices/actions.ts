@@ -8,6 +8,14 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+async function syncClientStatus(clientId: string) {
+  const policies = await prisma.policy.count({ where: { clientId } });
+  await prisma.client.update({
+    where: { id: clientId },
+    data: { status: policies > 0 ? "ATIVO" : "INATIVO" },
+  });
+}
+
 const updatePolicySchema = z.object({
   clientId: z.string().uuid().or(z.literal("")),
   insurer: z.string().optional().or(z.literal("")),
@@ -294,6 +302,8 @@ export async function createPolicyAction(
       },
     });
 
+    await syncClientStatus(clientId);
+
     if (hasFile) {
       try {
         const blob = await put(`apolices/${created.id}/${file.name}`, file, {
@@ -375,6 +385,14 @@ export async function updatePolicyAction(
         status,
       },
     });
+
+    if (existing.clientId !== clientId) {
+      await syncClientStatus(existing.clientId);
+      await syncClientStatus(clientId);
+    } else {
+      await syncClientStatus(clientId);
+    }
+
     revalidatePath("/app/apolices");
     revalidatePath(`/app/apolices/${policyId}`);
     redirect(`/app/apolices/${policyId}`);
@@ -388,8 +406,14 @@ export async function updatePolicyAction(
 
 export async function deletePolicyAction(policyId: string) {
   await requireSession();
+  const existing = await prisma.policy.findUnique({
+    where: { id: policyId },
+    select: { clientId: true },
+  });
   await prisma.policy.delete({ where: { id: policyId } });
+  if (existing) await syncClientStatus(existing.clientId);
   revalidatePath("/app/apolices");
+  revalidatePath("/app/clientes");
   redirect("/app/apolices");
 }
 
