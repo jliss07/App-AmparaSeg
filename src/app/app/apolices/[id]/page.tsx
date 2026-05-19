@@ -137,6 +137,7 @@ export default async function PolicyDetailsPage({
                 endDate: policy.endDate,
                 premium: policy.premium?.toString() ?? "",
                 status: policy.status,
+                  notes: policy.notes,
               }}
               action={update}
               submitLabel="Salvar"

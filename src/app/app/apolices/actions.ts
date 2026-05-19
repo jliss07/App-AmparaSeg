@@ -28,6 +28,7 @@ const updatePolicySchema = z.object({
   endDate: z.string().optional().or(z.literal("")),
   premium: z.string().optional().or(z.literal("")),
   status: z.string().optional().or(z.literal("")),
+  notes: z.string().optional().or(z.literal("")),
 });
 
 function toOptionalDate(value: string) {
@@ -220,6 +221,7 @@ export async function createPolicyAction(
     endDate: formData.get("endDate") ?? "",
     premium: formData.get("premium") ?? "",
     status: formData.get("status") ?? "ATIVA",
+    notes: formData.get("notes") ?? "",
   });
 
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
@@ -303,6 +305,7 @@ export async function createPolicyAction(
         endDate,
         premium: parsed.data.premium?.trim() ? parsed.data.premium.trim() : null,
         status: parsed.data.status?.trim() ? parsed.data.status.trim() : "ATIVA",
+        notes: parsed.data.notes?.trim() ? parsed.data.notes.trim() : null,
       },
     });
 
@@ -350,6 +353,7 @@ export async function updatePolicyAction(
     endDate: formData.get("endDate") ?? "",
     premium: formData.get("premium") ?? "",
     status: formData.get("status") ?? "ATIVA",
+    notes: formData.get("notes") ?? "",
   });
 
   if (!parsed.success) return { error: "Dados inválidos. Verifique os campos." };
@@ -387,6 +391,7 @@ export async function updatePolicyAction(
         endDate,
         premium: parsed.data.premium?.trim() ? parsed.data.premium.trim() : null,
         status,
+        notes: parsed.data.notes?.trim() ? parsed.data.notes.trim() : null,
       },
     });
 

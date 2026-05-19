@@ -15,6 +15,7 @@ type PolicyFormValues = {
   endDate?: Date;
   premium?: string | null;
   status?: string;
+  notes?: string | null;
 };
 
 type ClientMode = "existing" | "new";
@@ -64,6 +65,7 @@ export function PolicyForm({
   const [startDate, setStartDate] = useState(toDateInputValue(initialValues?.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(initialValues?.endDate));
   const [premium, setPremium] = useState(initialValues?.premium ?? "");
+  const [notes, setNotes] = useState(initialValues?.notes ?? "");
   const [pdfParsePending, setPdfParsePending] = useState(false);
   const [pdfParseError, setPdfParseError] = useState<string | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -247,6 +249,16 @@ export function PolicyForm({
             value={premium}
             onChange={(e) => setPremium(e.target.value)}
             className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+          />
+        </div>
+
+        <div className="space-y-2 md:col-span-2">
+          <label className="text-sm font-semibold text-foreground">Observações</label>
+          <textarea
+            name="notes"
+            value={notes ?? ""}
+            onChange={(e) => setNotes(e.target.value)}
+            className="min-h-[110px] w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
           />
         </div>
 

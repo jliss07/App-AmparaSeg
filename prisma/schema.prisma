@@ -58,6 +58,7 @@ model Policy {
   endDate     DateTime
   premium     Decimal?   @db.Decimal(10, 2)
   status      String     @default("ATIVA")
+  notes       String?
   pdfUrl      String?
   pdfFileName String?
   createdAt   DateTime   @default(now())
